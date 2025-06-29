@@ -1,0 +1,50 @@
+# Milvus Configuration for SNOMED-CT Platform
+
+# Server configuration
+server:
+  address: 0.0.0.0
+  port: 19530
+
+# etcd configuration
+etcd:
+  endpoints:
+    - etcd:2379
+  rootPath: by-dev
+  metaSubPath: meta
+  kvSubPath: kv
+
+# Object storage configuration (MinIO)
+minio:
+  address: minio
+  port: 9000
+  accessKeyID: minioadmin
+  secretAccessKey: minioadmin
+  useSSL: false
+  bucketName: milvus-bucket
+  rootPath: files
+
+# Logging configuration
+log:
+  level: info
+  file:
+    rootPath: /var/lib/milvus/logs
+    maxSize: 300
+    maxAge: 10
+
+# Performance tuning
+quotaAndLimits:
+  enabled: true
+  limitWriting:
+    ttProtection:
+      enabled: true
+      maxTimeTickDelay: 9223372036854775807
+    memProtection:
+      enabled: true
+      dataNodeMemoryLowWaterLevel: 0.85
+      dataNodeMemoryHighWaterLevel: 0.95
+      queryNodeMemoryLowWaterLevel: 0.85
+      queryNodeMemoryHighWaterLevel: 0.95
+    diskProtection:
+      enabled: true
+      diskQuota: -1
+      diskQuotaPerCollection: -1 

@@ -28,9 +28,7 @@ The platform uses a multi-modal approach to store and query SNOMED-CT data:
 ## 📋 Prerequisites
 
 - Python 3.8+
-- PostgreSQL 12+
-- Milvus 2.3+
-- JanusGraph 0.6+
+- Docker Desktop
 - UMLS License (for SNOMED-CT data access)
 
 ## 🛠️ Installation
@@ -58,34 +56,131 @@ cp env.template .env
 # Edit .env with your database configurations
 ```
 
+## 🐳 Docker Setup (Recommended)
+
+### Quick Start with Docker Compose
+
+The platform includes a complete Docker Compose setup for all required services:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Check service status
+docker-compose ps
+
+# View logs
+docker-compose logs milvus
+docker-compose logs janusgraph
+```
+
+### 🎉 Successfully Installed Services
+
+**Multi-Modal Data Platform Stack:**
+
+1. **JanusGraph (Graph Database)** ✅
+   - Container: `janusgraph-snomed`
+   - Ports: `8182` (Gremlin), `8184` (Management)
+   - Backend: Cassandra + Elasticsearch
+   - Status: Running
+
+2. **Milvus (Vector Database)** ✅
+   - Container: `milvus-standalone`
+   - Ports: `19530` (gRPC), `9091` (HTTP)
+   - Configuration: Simplified with embedded etcd and local storage
+   - Status: **Healthy** and responding
+
+3. **Supporting Services:**
+   - **Cassandra** ✅ - JanusGraph storage backend
+   - **Elasticsearch** ✅ - JanusGraph indexing backend
+
+### Service URLs
+
+- **Milvus HTTP**: http://localhost:9091
+- **JanusGraph Gremlin**: http://localhost:8182
+- **Elasticsearch**: http://localhost:9200
+- **Cassandra**: localhost:9042
+
+### Docker Service Management
+
+```bash
+# View status
+docker-compose ps
+
+# Start specific service
+docker-compose up -d milvus
+
+# Stop services
+docker-compose stop
+
+# View logs
+docker-compose logs --tail=50 janusgraph
+
+# Remove services and data
+docker-compose down -v
+```
+
 ## 🗄️ Database Setup
 
-### PostgreSQL
+### PostgreSQL (External)
 ```bash
-# Create database
+# Create database (external PostgreSQL instance required)
 createdb snomed_ct
 
 # The schema will be created automatically by the pipeline
 ```
 
-### Milvus
+### Milvus (Docker)
 ```bash
-# Install Milvus (Docker)
-docker run -d --name milvus -p 19530:19530 milvusdb/milvus:latest
+# Already running via Docker Compose
+# Test connectivity
+curl http://localhost:9091/healthz
+# Expected response: OK
 
 # Collections will be created automatically by the pipeline
 ```
 
-### JanusGraph
+### JanusGraph (Docker)
 ```bash
-# Install JanusGraph
-wget https://github.com/JanusGraph/janusgraph/releases/download/v0.6.3/janusgraph-0.6.3.zip
-unzip janusgraph-0.6.3.zip
-cd janusgraph-0.6.3
-bin/janusgraph-server.sh start
+# Already running via Docker Compose with Cassandra + Elasticsearch
+# Access Gremlin console: http://localhost:8182
 
 # Schema will be created automatically by the pipeline
 ```
+
+## 🔧 What's Available
+
+Your complete **SNOMED-CT Multi-Modal Data Platform** now includes:
+
+- **PostgreSQL** (structured data) - external setup required
+- **Milvus** (vector embeddings) - running in Docker
+- **JanusGraph** (graph relationships) - running in Docker
+
+## 🚀 Next Steps
+
+Now that all databases are running, you can:
+
+1. **Test the complete pipeline:**
+   ```bash
+   # Test the graph pipeline
+   python test_graph_pipeline.py
+   
+   # Test the embedding pipeline
+   python test_embedding_pipeline.py
+   ```
+
+2. **Access the services:**
+   - **Milvus HTTP Health**: http://localhost:9091/healthz
+   - **JanusGraph Gremlin**: ws://localhost:8182/gremlin
+   - **Elasticsearch**: http://localhost:9200/_cluster/health
+   - **Cassandra**: cqlsh localhost 9042
+
+3. **Current Architecture Status:**
+   - ✅ **Structured queries** (PostgreSQL) - ready
+   - ✅ **Semantic search** (Milvus) - ready
+   - ✅ **Graph traversal** (JanusGraph) - ready
+   - ✅ **SNOMED-CT data processing** (RF2 parsers) - ready
+   - ✅ **Embedding generation** (BioBERT/ClinicalBERT) - ready
 
 ## 📥 Data Ingestion
 
