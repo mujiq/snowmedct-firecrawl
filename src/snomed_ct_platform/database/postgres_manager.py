@@ -379,4 +379,391 @@ class PostgresManager:
                 
         except Exception as e:
             logger.error(f"Failed to get table counts: {e}")
-            raise 
+            raise
+
+    def get_concepts(self, limit: int = 20, offset: int = 0, active_only: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get paginated list of concepts.
+        
+        Args:
+            limit: Maximum number of concepts to return
+            offset: Number of concepts to skip
+            active_only: Whether to include only active concepts
+            
+        Returns:
+            List of concept dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                query = """
+                    SELECT id, effective_time, active, module_id, definition_status_id
+                    FROM concepts
+                """
+                
+                if active_only:
+                    query += " WHERE active = true"
+                
+                query += f" ORDER BY id LIMIT {limit} OFFSET {offset}"
+                
+                result = conn.execute(text(query))
+                concepts = [dict(row._mapping) for row in result]
+                
+                logger.debug(f"Retrieved {len(concepts)} concepts (limit={limit}, offset={offset})")
+                return concepts
+                
+        except Exception as e:
+            logger.error(f"Failed to get concepts: {e}")
+            raise
+
+    def get_concepts_count(self, active_only: bool = True) -> int:
+        """
+        Get total count of concepts.
+        
+        Args:
+            active_only: Whether to count only active concepts
+            
+        Returns:
+            Total number of concepts
+        """
+        try:
+            with self.engine.connect() as conn:
+                query = "SELECT COUNT(*) FROM concepts"
+                
+                if active_only:
+                    query += " WHERE active = true"
+                
+                result = conn.execute(text(query))
+                count = result.scalar()
+                
+                logger.debug(f"Total concepts count: {count}")
+                return count
+                
+        except Exception as e:
+            logger.error(f"Failed to get concepts count: {e}")
+            raise
+
+    def get_concept_by_id(self, concept_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific concept by ID.
+        
+        Args:
+            concept_id: SNOMED-CT concept ID
+            
+        Returns:
+            Concept dictionary or None if not found
+        """
+        try:
+            with self.engine.connect() as conn:
+                query = """
+                    SELECT id, effective_time, active, module_id, definition_status_id
+                    FROM concepts
+                    WHERE id = :concept_id
+                """
+                
+                result = conn.execute(text(query), {"concept_id": concept_id})
+                row = result.fetchone()
+                
+                if row:
+                    concept = dict(row._mapping)
+                    logger.debug(f"Found concept {concept_id}")
+                    return concept
+                else:
+                    logger.debug(f"Concept {concept_id} not found")
+                    return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get concept by ID {concept_id}: {e}")
+            raise
+
+    def search_concepts_by_text(self, query: str, active_only: bool = True, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search concepts by text query in descriptions.
+        
+        Args:
+            query: Search text
+            active_only: Whether to search only active concepts
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching concept dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                sql_query = """
+                    SELECT DISTINCT c.id, c.effective_time, c.active, c.module_id, c.definition_status_id,
+                           d.term as matched_term
+                    FROM concepts c
+                    JOIN descriptions d ON c.id = d.concept_id
+                    WHERE d.term ILIKE :search_query
+                """
+                
+                if active_only:
+                    sql_query += " AND c.active = true AND d.active = true"
+                
+                sql_query += f" ORDER BY c.id LIMIT {limit}"
+                
+                result = conn.execute(text(sql_query), {"search_query": f"%{query}%"})
+                concepts = [dict(row._mapping) for row in result]
+                
+                logger.debug(f"Found {len(concepts)} concepts matching '{query}'")
+                return concepts
+                
+        except Exception as e:
+            logger.error(f"Failed to search concepts by text '{query}': {e}")
+            raise
+
+    def get_descriptions_by_concept_id(self, concept_id: int, active_only: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get all descriptions for a specific concept.
+        
+        Args:
+            concept_id: SNOMED-CT concept ID
+            active_only: Whether to include only active descriptions
+            
+        Returns:
+            List of description dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                query = """
+                    SELECT id, effective_time, active, module_id, concept_id, 
+                           language_code, type_id, term, case_significance_id
+                    FROM descriptions
+                    WHERE concept_id = :concept_id
+                """
+                
+                if active_only:
+                    query += " AND active = true"
+                
+                query += " ORDER BY type_id, id"
+                
+                result = conn.execute(text(query), {"concept_id": concept_id})
+                descriptions = [dict(row._mapping) for row in result]
+                
+                logger.debug(f"Found {len(descriptions)} descriptions for concept {concept_id}")
+                return descriptions
+                
+        except Exception as e:
+            logger.error(f"Failed to get descriptions for concept {concept_id}: {e}")
+            raise
+
+    def get_relationships_by_concept_id(self, concept_id: int, active_only: bool = True, direction: str = "both") -> List[Dict[str, Any]]:
+        """
+        Get all relationships for a specific concept.
+        
+        Args:
+            concept_id: SNOMED-CT concept ID
+            active_only: Whether to include only active relationships
+            direction: Relationship direction ("source", "destination", "both")
+            
+        Returns:
+            List of relationship dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                if direction == "source":
+                    where_clause = "WHERE source_id = :concept_id"
+                elif direction == "destination":
+                    where_clause = "WHERE destination_id = :concept_id"
+                else:  # both
+                    where_clause = "WHERE (source_id = :concept_id OR destination_id = :concept_id)"
+                
+                query = f"""
+                    SELECT id, effective_time, active, module_id, source_id, destination_id,
+                           relationship_group, type_id, characteristic_type_id, modifier_id
+                    FROM relationships
+                    {where_clause}
+                """
+                
+                if active_only:
+                    query += " AND active = true"
+                
+                query += " ORDER BY relationship_group, type_id, id"
+                
+                result = conn.execute(text(query), {"concept_id": concept_id})
+                relationships = [dict(row._mapping) for row in result]
+                
+                logger.debug(f"Found {len(relationships)} relationships for concept {concept_id} (direction: {direction})")
+                return relationships
+                
+        except Exception as e:
+            logger.error(f"Failed to get relationships for concept {concept_id}: {e}")
+            raise
+
+    def search_descriptions(self, query: str, active_only: bool = True, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Search descriptions by text query.
+        
+        Args:
+            query: Search text
+            active_only: Whether to search only active descriptions
+            limit: Maximum number of results
+            offset: Number of results to skip
+            
+        Returns:
+            List of matching description dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                sql_query = """
+                    SELECT id, effective_time, active, module_id, concept_id,
+                           language_code, type_id, term, case_significance_id
+                    FROM descriptions
+                    WHERE term ILIKE :search_query
+                """
+                
+                if active_only:
+                    sql_query += " AND active = true"
+                
+                sql_query += f" ORDER BY length(term), term LIMIT {limit} OFFSET {offset}"
+                
+                result = conn.execute(text(sql_query), {"search_query": f"%{query}%"})
+                descriptions = [dict(row._mapping) for row in result]
+                
+                logger.debug(f"Found {len(descriptions)} descriptions matching '{query}'")
+                return descriptions
+                
+        except Exception as e:
+            logger.error(f"Failed to search descriptions by text '{query}': {e}")
+            raise
+
+    def get_descriptions_count(self, query: Optional[str] = None, active_only: bool = True) -> int:
+        """
+        Get total count of descriptions.
+        
+        Args:
+            query: Optional search text to filter by
+            active_only: Whether to count only active descriptions
+            
+        Returns:
+            Total number of descriptions
+        """
+        try:
+            with self.engine.connect() as conn:
+                sql_query = "SELECT COUNT(*) FROM descriptions"
+                params = {}
+                
+                conditions = []
+                if query:
+                    conditions.append("term ILIKE :search_query")
+                    params["search_query"] = f"%{query}%"
+                
+                if active_only:
+                    conditions.append("active = true")
+                
+                if conditions:
+                    sql_query += " WHERE " + " AND ".join(conditions)
+                
+                result = conn.execute(text(sql_query), params)
+                count = result.scalar()
+                
+                logger.debug(f"Total descriptions count: {count}")
+                return count
+                
+        except Exception as e:
+            logger.error(f"Failed to get descriptions count: {e}")
+            raise
+
+    def get_relationships(self, limit: int = 20, offset: int = 0, active_only: bool = True, type_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get paginated list of relationships.
+        
+        Args:
+            limit: Maximum number of relationships to return
+            offset: Number of relationships to skip
+            active_only: Whether to include only active relationships
+            type_id: Optional relationship type ID to filter by
+            
+        Returns:
+            List of relationship dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                query = """
+                    SELECT id, effective_time, active, module_id, source_id, destination_id,
+                           relationship_group, type_id, characteristic_type_id, modifier_id
+                    FROM relationships
+                """
+                
+                conditions = []
+                params = {}
+                
+                if active_only:
+                    conditions.append("active = true")
+                
+                if type_id:
+                    conditions.append("type_id = :type_id")
+                    params["type_id"] = type_id
+                
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                
+                query += f" ORDER BY source_id, type_id, id LIMIT {limit} OFFSET {offset}"
+                
+                result = conn.execute(text(query), params)
+                relationships = [dict(row._mapping) for row in result]
+                
+                logger.debug(f"Retrieved {len(relationships)} relationships (limit={limit}, offset={offset})")
+                return relationships
+                
+        except Exception as e:
+            logger.error(f"Failed to get relationships: {e}")
+            raise
+
+    def get_relationships_count(self, active_only: bool = True, type_id: Optional[int] = None) -> int:
+        """
+        Get total count of relationships.
+        
+        Args:
+            active_only: Whether to count only active relationships
+            type_id: Optional relationship type ID to filter by
+            
+        Returns:
+            Total number of relationships
+        """
+        try:
+            with self.engine.connect() as conn:
+                query = "SELECT COUNT(*) FROM relationships"
+                conditions = []
+                params = {}
+                
+                if active_only:
+                    conditions.append("active = true")
+                
+                if type_id:
+                    conditions.append("type_id = :type_id")
+                    params["type_id"] = type_id
+                
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                
+                result = conn.execute(text(query), params)
+                count = result.scalar()
+                
+                logger.debug(f"Total relationships count: {count}")
+                return count
+                
+        except Exception as e:
+            logger.error(f"Failed to get relationships count: {e}")
+            raise
+
+    def test_connection(self) -> bool:
+        """
+        Test database connection.
+        
+        Returns:
+            True if connection is successful, False otherwise
+        """
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return True
+        except Exception as e:
+            logger.error(f"Database connection test failed: {e}")
+            return False
+
+    def close(self) -> None:
+        """Close database connection."""
+        if self.engine:
+            self.engine.dispose()
+            logger.info("PostgreSQL connection closed") 

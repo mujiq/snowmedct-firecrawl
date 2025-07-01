@@ -7,7 +7,8 @@ from fastapi import Depends, HTTPException, status
 import logging
 
 from ..database.postgres_manager import PostgresManager
-from ..embeddings.milvus_manager import MilvusManager
+from ..database.milvus_manager import MilvusManager
+from ..embeddings.model_manager import EmbeddingModelManager
 from ..graph.janusgraph_manager import JanusGraphManager
 from .config import settings
 
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Global database manager instances
 _database_managers: Optional[Dict[str, Any]] = None
+_embedding_model_manager: Optional[EmbeddingModelManager] = None
 
 
 async def get_database_managers() -> Dict[str, Any]:
@@ -100,6 +102,48 @@ async def initialize_database_managers() -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database initialization failed"
+        )
+
+
+async def get_embedding_model_manager() -> EmbeddingModelManager:
+    """
+    Get embedding model manager singleton.
+    
+    Returns:
+        EmbeddingModelManager instance
+    """
+    global _embedding_model_manager
+    
+    if _embedding_model_manager is None:
+        _embedding_model_manager = await initialize_embedding_model_manager()
+    
+    return _embedding_model_manager
+
+
+async def initialize_embedding_model_manager() -> EmbeddingModelManager:
+    """
+    Initialize embedding model manager.
+    
+    Returns:
+        Initialized EmbeddingModelManager instance
+        
+    Raises:
+        HTTPException: If model initialization fails
+    """
+    try:
+        model_manager = EmbeddingModelManager(
+            model_name=settings.EMBEDDING_MODEL_NAME,
+            device=settings.EMBEDDING_DEVICE
+        )
+        model_manager.load_model()
+        logger.info("Embedding model manager initialized successfully")
+        return model_manager
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize embedding model manager: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Embedding model initialization failed"
         )
 
 
